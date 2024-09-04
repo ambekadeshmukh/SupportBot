@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Demo - Region of Waterloo</title>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1009.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: url('https://waterloobot.s3.amazonaws.com/kids-learnign-about-environment.jpg') no-repeat center center fixed;
+            background-size: cover;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .logo {
+            height: 50px;
+            margin-right: 20px;
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        nav ul {
+            list-style-type: none;
+            display: flex;
+        }
+        nav ul li {
+            margin-right: 20px;
+        }
+        nav ul li a {
+            color: #0056b3;
+            text-decoration: none;
+        }
+        main {
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        h1 {
+            color: #0056b3;
+        }
+        #chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: none;
+        }
+        #chat-header {
+            background-color: #0056b3;
+            color: white;
+            padding: 10px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        #minimize-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+        #chatbox {
+            height: 300px;
+            overflow-y: scroll;
+            padding: 10px;
+        }
+        #user-input-container {
+            display: flex;
+            padding: 10px;
+        }
+        #userInput {
+            flex-grow: 1;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        #sendButton {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin-left: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .user-message {
+            background-color: #e6f3ff;
+            padding: 5px 10px;
+            margin: 5px 0;
+            border-radius: 10px;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #f0f0f0;
+            padding: 5px 10px;
+            margin: 5px 0;
+            border-radius: 10px;
+        }
+        #start-chat-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <img src="https://waterloobot.s3.amazonaws.com/region-of-waterloo-logo-3A4ED8CB95-seeklogo.com.png" alt="Region of Waterloo Logo" class="logo">
+            <ul>
+                <li><a href="#">Living Here</a></li>
+                <li><a href="#">Exploring the Region</a></li>
+                <li><a href="#">Doing Business</a></li>
+                <li><a href="#">Health and Wellness</a></li>
+                <li><a href="#">Regional Government</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <div class="container">
+        <main>
+            <h1>Welcome to the Region of Waterloo</h1>
+            <p>Discover our vibrant community and learn about local services. Our AI assistant is here to help you navigate and explore!</p>
+        </main>
+    </div>
+
+    <button id="start-chat-btn">Start Chat</button>
+
+    <div id="chat-container">
+        <div id="chat-header">
+            <span>Region of Waterloo Assistant</span>
+            <button id="minimize-btn">−</button>
+        </div>
+        <div id="chatbox"></div>
+        <div id="user-input-container">
+            <input type="text" id="userInput" placeholder="Type your message...">
+            <button id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // Configure AWS SDK
+        AWS.config.region = 'us-east-1'; // e.g., 'us-east-1'
+        AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+            IdentityPoolId: 'us-east-1:d3467888-a963-4c7c-8e23-6445824bef53'
+        });
+
+        // Initialize the Amazon Lex runtime client
+        var lexRuntime = new AWS.LexRuntime();
+
+        // Initialize Amazon Polly
+        var polly = new AWS.Polly();
+
+        var chatbox = document.getElementById('chatbox');
+        var userInput = document.getElementById('userInput');
+        var sendButton = document.getElementById('sendButton');
+        var startChatBtn = document.getElementById('start-chat-btn');
+        var chatContainer = document.getElementById('chat-container');
+        var minimizeBtn = document.getElementById('minimize-btn');
+
+        function addMessage(message, isUser) {
+            var messageDiv = document.createElement('div');
+            messageDiv.className = isUser ? 'user-message' : 'bot-message';
+            messageDiv.textContent = message;
+            chatbox.appendChild(messageDiv);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        function sendToLex(message) {
+            var params = {
+                botName: 'WaterlooServicesBot',
+                botAlias: 'TestBotAlias',
+                userId: 'USER' + Date.now(),
+                inputText: message
+            };
+
+            lexRuntime.postText(params, function(err, data) {
+                if (err) {
+                    console.log(err, err.stack);
+                    addMessage('Error: ' + err.message, false);
+                } else {
+                    addMessage(data.message, false);
+                    speakMessage(data.message);
+                }
+            });
+        }
+
+        function speakMessage(message) {
+            var params = {
+                Text: message,
+                OutputFormat: "mp3",
+                VoiceId: "Joanna"
+            };
+
+            polly.synthesizeSpeech(params, function(err, data) {
+                if (err) {
+                    console.log(err, err.stack);
+                } else {
+                    var uInt8Array = new Uint8Array(data.AudioStream);
+                    var arrayBuffer = uInt8Array.buffer;
+                    var blob = new Blob([arrayBuffer], { type: "audio/mp3" });
+                    var url = URL.createObjectURL(blob);
+                    var audio = new Audio(url);
+                    audio.play();
+                }
+            });
+        }
+
+        sendButton.onclick = function() {
+            var message = userInput.value.trim();
+            if (message) {
+                addMessage(message, true);
+                sendToLex(message);
+                userInput.value = '';
+            }
+        };
+
+        userInput.onkeypress = function(e) {
+            if (e.which == 13 && userInput.value.trim()) {
+                sendButton.click();
+            }
+        };
+
+        startChatBtn.onclick = function() {
+            chatContainer.style.display = 'block';
+            startChatBtn.style.display = 'none';
+            addMessage("Hello! I'm the Region of Waterloo chatbot. How can I assist you today?", false);
+        };
+
+        minimizeBtn.onclick = function() {
+            chatContainer.style.display = 'none';
+            startChatBtn.style.display = 'block';
+        };
+    </script>
+</body>
+</html>
